@@ -11,19 +11,23 @@ from pathlib import Path
 class BotStarter:
     def __init__(self):
         # GitHub repository configuration
-        self.GITHUB_USER = "your-username"  # Change this to your GitHub username
-        self.GITHUB_REPO = "your-repo"      # Change this to your repository name
+        self.GITHUB_USER = "0sjk0"  # Change this to your GitHub username
+        self.GITHUB_REPO = "new-bot"      # Change this to your repository name
         self.GITHUB_BRANCH = "main"         # Change this if using a different default branch
         
         # Construct GitHub URLs
         self.REPO_URL = f"https://api.github.com/repos/{self.GITHUB_USER}/{self.GITHUB_REPO}/contents"
         self.RELEASE_URL = f"https://api.github.com/repos/{self.GITHUB_USER}/{self.GITHUB_REPO}/releases/latest"
         
-        # Local configuration
-        self.VERSION_FILE = "version.json"
+        # Directory structure
         self.SCRIPTS_DIR = "scripts"
-        self.VENV_DIR = "venv"
-        self.CONFIG_FILE = "bot_config.json"
+        self.VERSION_FILE = os.path.join(self.SCRIPTS_DIR, "version.json")
+        self.CONFIG_FILE = os.path.join(self.SCRIPTS_DIR, "config/bot_config.json")
+        self.VENV_DIR = os.path.join(self.SCRIPTS_DIR, "venv")
+        self.LOGS_DIR = os.path.join(self.SCRIPTS_DIR, "logs")
+        self.DATA_DIR = os.path.join(self.SCRIPTS_DIR, "data")
+        self.COGS_DIR = os.path.join(self.SCRIPTS_DIR, "cogs")
+        self.CONFIG_DIR = os.path.join(self.SCRIPTS_DIR, "config")
         
         self.required_packages = [
             "interactions.py",
@@ -43,11 +47,29 @@ class BotStarter:
             self.python_path = os.path.join(self.VENV_DIR, "bin", "python")
             self.pip_path = os.path.join(self.VENV_DIR, "bin", "pip")
 
+        # Create directory structure
+        self._create_directories()
+        
         # Load or create configuration
         self.load_config()
 
+    def _create_directories(self):
+        """Create necessary directories if they don't exist."""
+        directories = [
+            self.SCRIPTS_DIR,
+            self.LOGS_DIR,
+            self.DATA_DIR,
+            self.COGS_DIR,
+            self.CONFIG_DIR
+        ]
+        
+        for directory in directories:
+            os.makedirs(directory, exist_ok=True)
+
     def load_config(self):
         """Load or create configuration file."""
+        os.makedirs(os.path.dirname(self.CONFIG_FILE), exist_ok=True)
+        
         if os.path.exists(self.CONFIG_FILE):
             try:
                 with open(self.CONFIG_FILE, 'r') as f:
@@ -79,6 +101,7 @@ class BotStarter:
         }
         
         try:
+            os.makedirs(os.path.dirname(self.CONFIG_FILE), exist_ok=True)
             with open(self.CONFIG_FILE, 'w') as f:
                 json.dump(config, f, indent=4)
             print("✓ Configuration saved successfully")
@@ -175,11 +198,12 @@ class BotStarter:
 
     def ensure_env_file(self):
         """Ensure .env file exists with bot token."""
-        if not os.path.exists(".env"):
+        env_file = os.path.join(self.CONFIG_DIR, ".env")
+        if not os.path.exists(env_file):
             print("\nNo .env file found. Creating one...")
             token = input("Please enter your bot token: ").strip()
             
-            with open(".env", "w") as f:
+            with open(env_file, 'w') as f:
                 f.write(f"BOT_TOKEN={token}\n")
             print("✓ Created .env file with bot token")
         else:
