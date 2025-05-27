@@ -3,9 +3,9 @@ import sys
 import logging
 from typing import Optional, List
 from pathlib import Path
-import interactions
-from interactions import Client, Intents, listen
-from dotenv import load_dotenv
+import interactions # type: ignore
+from interactions import Client, Intents, listen # type: ignore
+from dotenv import load_dotenv # type: ignore
 
 # Configure logging
 logging.basicConfig(

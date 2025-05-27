@@ -6,7 +6,7 @@ import subprocess
 import platform
 import venv
 import zipfile
-import requests
+import requests # type: ignore
 from pathlib import Path
 
 class BotStarter:
@@ -83,7 +83,7 @@ class BotStarter:
             return False
 
     def get_installed_packages(self):
-        """Get a dictionary of installed packages and their versions."""
+        """Get a set of installed package names."""
         try:
             result = self._run_venv_command(
                 ["-m", "pip", "list", "--format=json"],
@@ -91,59 +91,41 @@ class BotStarter:
             )
             if result and result.stdout:
                 packages = json.loads(result.stdout)
-                return {pkg["name"].lower(): pkg["version"] for pkg in packages}
-            return {}
+                return {pkg["name"].lower() for pkg in packages}
+            return set()
         except Exception:
-            return {}
+            return set()
 
     def ensure_dependencies(self):
-        """Install missing packages and update outdated ones in virtual environment."""
+        """Install only missing packages in virtual environment."""
         print("\nChecking required packages...")
         
         # Get currently installed packages
         installed_packages = self.get_installed_packages()
         
-        # Check each required package
-        packages_to_install = []
+        # Check for missing packages
+        missing_packages = []
         for package in self.required_packages:
             package_name = package.lower()
             if package_name not in installed_packages:
                 print(f"Missing package: {package}")
-                packages_to_install.append(package)
-                continue
-                
-            # Check if package needs update
-            try:
-                result = self._run_venv_command(
-                    ["-m", "pip", "list", "--outdated", "--format=json"],
-                    capture_output=True
-                )
-                if result and result.stdout:
-                    outdated = json.loads(result.stdout)
-                    for pkg in outdated:
-                        if pkg["name"].lower() == package_name:
-                            print(f"Package needs update: {package}")
-                            packages_to_install.append(package)
-                            break
-            except Exception:
-                # If we can't check for updates, assume package is up to date
-                pass
+                missing_packages.append(package)
         
-        # Install/update necessary packages
-        if packages_to_install:
-            print("\nInstalling/updating packages...")
-            for package in packages_to_install:
-                print(f"Installing/updating {package}...")
+        # Install missing packages
+        if missing_packages:
+            print("\nInstalling missing packages...")
+            for package in missing_packages:
+                print(f"Installing {package}...")
                 success = self._run_venv_command(
-                    ["-m", "pip", "install", "--upgrade", package]
+                    ["-m", "pip", "install", package]
                 )
                 if success:
-                    print(f"✓ Successfully installed/updated {package}")
+                    print(f"✓ Successfully installed {package}")
                 else:
-                    print(f"✗ Failed to install/update {package}")
+                    print(f"✗ Failed to install {package}")
                     sys.exit(1)
         else:
-            print("✓ All required packages are up to date")
+            print("✓ All required packages are installed")
 
     def get_local_version(self):
         """Get the local version from version.txt if it exists."""
@@ -336,7 +318,7 @@ class BotStarter:
             
             try:
                 # First try to run as module
-                import main
+                import main # type: ignore
                 
                 # Try different ways the bot might be started
                 if hasattr(main, 'run'):
