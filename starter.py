@@ -5,29 +5,21 @@ import shutil
 import subprocess
 import platform
 import venv
-from urllib.parse import urljoin
+import zipfile
+import requests
 from pathlib import Path
 
 class BotStarter:
     def __init__(self):
-        # GitHub repository configuration
-        self.GITHUB_USER = "0sjk0"  # Change this to your GitHub username
-        self.GITHUB_REPO = "new-bot"      # Change this to your repository name
-        self.GITHUB_BRANCH = "main"         # Change this if using a different default branch
+        # Fixed GitHub repository configuration
+        self.GITHUB_USER = "0sjk0"
+        self.GITHUB_REPO = "new-bot"
+        self.REPO_URL = f"https://api.github.com/repos/{self.GITHUB_USER}/{self.GITHUB_REPO}"
+        self.RELEASE_URL = f"{self.REPO_URL}/releases/latest"
         
-        # Construct GitHub URLs
-        self.REPO_URL = f"https://api.github.com/repos/{self.GITHUB_USER}/{self.GITHUB_REPO}/contents"
-        self.RELEASE_URL = f"https://api.github.com/repos/{self.GITHUB_USER}/{self.GITHUB_REPO}/releases/latest"
-        
-        # Directory structure
-        self.SCRIPTS_DIR = "scripts"
-        self.VERSION_FILE = os.path.join(self.SCRIPTS_DIR, "version.json")
-        self.CONFIG_FILE = os.path.join(self.SCRIPTS_DIR, "config/bot_config.json")
-        self.VENV_DIR = os.path.join(self.SCRIPTS_DIR, "venv")
-        self.LOGS_DIR = os.path.join(self.SCRIPTS_DIR, "logs")
-        self.DATA_DIR = os.path.join(self.SCRIPTS_DIR, "data")
-        self.COGS_DIR = os.path.join(self.SCRIPTS_DIR, "cogs")
-        self.CONFIG_DIR = os.path.join(self.SCRIPTS_DIR, "config")
+        # Local paths
+        self.VENV_DIR = "scripts/venv"
+        self.TEMP_ZIP = "temp_download.zip"
         
         self.required_packages = [
             "interactions.py",
@@ -47,119 +39,28 @@ class BotStarter:
             self.python_path = os.path.join(self.VENV_DIR, "bin", "python")
             self.pip_path = os.path.join(self.VENV_DIR, "bin", "pip")
 
-        # Create directory structure
-        self._create_directories()
-        
-        # Load or create configuration
-        self.load_config()
-
-    def _create_directories(self):
-        """Create necessary directories if they don't exist."""
-        directories = [
-            self.SCRIPTS_DIR,
-            self.LOGS_DIR,
-            self.DATA_DIR,
-            self.COGS_DIR,
-            self.CONFIG_DIR
-        ]
-        
-        for directory in directories:
-            os.makedirs(directory, exist_ok=True)
-
-    def load_config(self):
-        """Load or create configuration file."""
-        os.makedirs(os.path.dirname(self.CONFIG_FILE), exist_ok=True)
-        
-        if os.path.exists(self.CONFIG_FILE):
-            try:
-                with open(self.CONFIG_FILE, 'r') as f:
-                    config = json.load(f)
-                self.GITHUB_USER = config.get('github_user', self.GITHUB_USER)
-                self.GITHUB_REPO = config.get('github_repo', self.GITHUB_REPO)
-                self.GITHUB_BRANCH = config.get('github_branch', self.GITHUB_BRANCH)
-                # Update URLs after loading config
-                self.REPO_URL = f"https://api.github.com/repos/{self.GITHUB_USER}/{self.GITHUB_REPO}/contents"
-                self.RELEASE_URL = f"https://api.github.com/repos/{self.GITHUB_USER}/{self.GITHUB_REPO}/releases/latest"
-            except Exception as e:
-                print(f"Error loading config: {e}")
-        else:
-            self.create_initial_config()
-
-    def create_initial_config(self):
-        """Create initial configuration file."""
-        print("\nFirst-time setup: GitHub repository configuration")
-        print("Please enter your GitHub repository information:")
-        
-        self.GITHUB_USER = input("GitHub username: ").strip()
-        self.GITHUB_REPO = input("Repository name: ").strip()
-        self.GITHUB_BRANCH = input("Branch name (press Enter for 'main'): ").strip() or "main"
-        
-        config = {
-            'github_user': self.GITHUB_USER,
-            'github_repo': self.GITHUB_REPO,
-            'github_branch': self.GITHUB_BRANCH
-        }
-        
-        try:
-            os.makedirs(os.path.dirname(self.CONFIG_FILE), exist_ok=True)
-            with open(self.CONFIG_FILE, 'w') as f:
-                json.dump(config, f, indent=4)
-            print("✓ Configuration saved successfully")
-            
-            # Update URLs after saving config
-            self.REPO_URL = f"https://api.github.com/repos/{self.GITHUB_USER}/{self.GITHUB_REPO}/contents"
-            self.RELEASE_URL = f"https://api.github.com/repos/{self.GITHUB_USER}/{self.GITHUB_REPO}/releases/latest"
-        except Exception as e:
-            print(f"Error saving config: {e}")
-            sys.exit(1)
-
-    def verify_repository_access(self):
-        """Verify access to the GitHub repository."""
-        try:
-            cmd_result = self._run_venv_command(
-                ["-c", f"import requests; response = requests.get('{self.REPO_URL}'); print(response.status_code)"],
-                capture_output=True
-            )
-            
-            if cmd_result and cmd_result.returncode == 0:
-                status_code = int(cmd_result.stdout.strip())
-                if status_code == 200:
-                    print("✓ GitHub repository access verified")
-                    return True
-                elif status_code == 404:
-                    print("✗ Repository not found. Please check your GitHub username and repository name.")
-                else:
-                    print(f"✗ GitHub API returned status code: {status_code}")
-            return False
-        except Exception as e:
-            print(f"Error verifying repository access: {e}")
-            return False
-
     def setup_virtual_environment(self):
-        """Create and set up virtual environment."""
-        print("\nSetting up virtual environment...")
+        """Create and set up virtual environment if it doesn't exist."""
+        print("\nChecking virtual environment...")
         
-        # Remove existing venv if it exists
-        if os.path.exists(self.VENV_DIR):
-            print("Removing existing virtual environment...")
+        # Create scripts directory if it doesn't exist
+        os.makedirs("scripts", exist_ok=True)
+        
+        # Only create venv if it doesn't exist
+        if not os.path.exists(self.VENV_DIR):
+            print("Creating new virtual environment...")
             try:
-                shutil.rmtree(self.VENV_DIR)
+                venv.create(self.VENV_DIR, with_pip=True)
+                print("✓ Virtual environment created successfully")
+                
+                # Upgrade pip in new virtual environment
+                self._run_venv_command(["-m", "pip", "install", "--upgrade", "pip"])
+                print("✓ Pip upgraded in virtual environment")
             except Exception as e:
-                print(f"Error removing existing venv: {e}")
+                print(f"Failed to create virtual environment: {e}")
                 sys.exit(1)
-
-        # Create new virtual environment
-        print("Creating new virtual environment...")
-        try:
-            venv.create(self.VENV_DIR, with_pip=True)
-            print("✓ Virtual environment created successfully")
-        except Exception as e:
-            print(f"Failed to create virtual environment: {e}")
-            sys.exit(1)
-
-        # Upgrade pip in virtual environment
-        self._run_venv_command(["-m", "pip", "install", "--upgrade", "pip"])
-        print("✓ Pip upgraded in virtual environment")
+        else:
+            print("✓ Using existing virtual environment")
 
     def _run_venv_command(self, cmd_args, capture_output=False):
         """Run a command in the virtual environment."""
@@ -181,168 +82,310 @@ class BotStarter:
             print(f"Command failed: {e}")
             return False
 
-    def ensure_dependencies(self):
-        """Install and verify all required packages in virtual environment."""
-        print("\nInstalling required packages in virtual environment...")
-        
-        for package in self.required_packages:
-            print(f"Installing {package}...")
-            success = self._run_venv_command(
-                ["-m", "pip", "install", "--upgrade", package]
+    def get_installed_packages(self):
+        """Get a dictionary of installed packages and their versions."""
+        try:
+            result = self._run_venv_command(
+                ["-m", "pip", "list", "--format=json"],
+                capture_output=True
             )
-            if success:
-                print(f"✓ Successfully installed {package}")
-            else:
-                print(f"✗ Failed to install {package}")
-                sys.exit(1)
+            if result and result.stdout:
+                packages = json.loads(result.stdout)
+                return {pkg["name"].lower(): pkg["version"] for pkg in packages}
+            return {}
+        except Exception:
+            return {}
+
+    def ensure_dependencies(self):
+        """Install missing packages and update outdated ones in virtual environment."""
+        print("\nChecking required packages...")
+        
+        # Get currently installed packages
+        installed_packages = self.get_installed_packages()
+        
+        # Check each required package
+        packages_to_install = []
+        for package in self.required_packages:
+            package_name = package.lower()
+            if package_name not in installed_packages:
+                print(f"Missing package: {package}")
+                packages_to_install.append(package)
+                continue
+                
+            # Check if package needs update
+            try:
+                result = self._run_venv_command(
+                    ["-m", "pip", "list", "--outdated", "--format=json"],
+                    capture_output=True
+                )
+                if result and result.stdout:
+                    outdated = json.loads(result.stdout)
+                    for pkg in outdated:
+                        if pkg["name"].lower() == package_name:
+                            print(f"Package needs update: {package}")
+                            packages_to_install.append(package)
+                            break
+            except Exception:
+                # If we can't check for updates, assume package is up to date
+                pass
+        
+        # Install/update necessary packages
+        if packages_to_install:
+            print("\nInstalling/updating packages...")
+            for package in packages_to_install:
+                print(f"Installing/updating {package}...")
+                success = self._run_venv_command(
+                    ["-m", "pip", "install", "--upgrade", package]
+                )
+                if success:
+                    print(f"✓ Successfully installed/updated {package}")
+                else:
+                    print(f"✗ Failed to install/update {package}")
+                    sys.exit(1)
+        else:
+            print("✓ All required packages are up to date")
+
+    def get_local_version(self):
+        """Get the local version from version.txt if it exists."""
+        version_file = os.path.join("scripts", "version.txt")
+        if os.path.exists(version_file):
+            try:
+                with open(version_file, 'r') as f:
+                    return f.read().strip()
+            except Exception:
+                return None
+        return None
+
+    def save_local_version(self, version):
+        """Save the current version to version.txt."""
+        version_file = os.path.join("scripts", "version.txt")
+        os.makedirs(os.path.dirname(version_file), exist_ok=True)
+        with open(version_file, 'w') as f:
+            f.write(version)
+
+    def download_latest_release(self):
+        """Download and extract the latest release only if needed."""
+        print("\nChecking for updates...")
+        try:
+            # Get latest release info
+            response = requests.get(self.RELEASE_URL)
+            response.raise_for_status()
+            release_data = response.json()
+            
+            # Get latest version
+            latest_version = release_data.get('tag_name', release_data.get('id', ''))
+            
+            # Check if we already have this version
+            local_version = self.get_local_version()
+            
+            if local_version == latest_version and os.path.exists("scripts"):
+                print("✓ Already running the latest version")
+                return True
+                
+            print(f"New version available: {latest_version}")
+            
+            # Create temp directory for extraction
+            temp_dir = "temp_download"
+            if os.path.exists(temp_dir):
+                shutil.rmtree(temp_dir)
+            os.makedirs(temp_dir)
+            
+            try:
+                # Get the zipball URL
+                zipball_url = release_data['zipball_url']
+                
+                # Download the zip file
+                print("Downloading release files...")
+                response = requests.get(zipball_url, stream=True)
+                response.raise_for_status()
+                
+                zip_path = os.path.join(temp_dir, self.TEMP_ZIP)
+                
+                # Download zip file
+                with open(zip_path, 'wb') as f:
+                    for chunk in response.iter_content(chunk_size=8192):
+                        f.write(chunk)
+                
+                # Extract to temp directory first
+                print("Extracting files...")
+                with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                    zip_ref.extractall(temp_dir)
+                
+                # Get the extracted directory name (should be the only directory in temp_dir)
+                extracted_dir = next(os.walk(temp_dir))[1][0]
+                source_dir = os.path.join(temp_dir, extracted_dir)
+                source_scripts = os.path.join(source_dir, "scripts")
+                
+                # Create scripts directory if it doesn't exist
+                os.makedirs("scripts", exist_ok=True)
+                
+                # Function to safely update files
+                def safe_update_directory(src, dst):
+                    # Create destination if it doesn't exist
+                    os.makedirs(dst, exist_ok=True)
+                    
+                    # Copy each file, preserving the ones we want to keep
+                    for item in os.listdir(src):
+                        s = os.path.join(src, item)
+                        d = os.path.join(dst, item)
+                        
+                        if item in ['venv', 'config', 'data', 'logs', 'version.txt']:
+                            continue  # Skip these directories and files
+                            
+                        if os.path.isdir(s):
+                            safe_update_directory(s, d)
+                        else:
+                            # Only copy if file doesn't exist or is different
+                            if not os.path.exists(d) or not self.files_are_identical(s, d):
+                                shutil.copy2(s, d)
+                
+                # Update files while preserving important directories
+                safe_update_directory(source_scripts, "scripts")
+                
+                # Save the new version
+                self.save_local_version(latest_version)
+                
+                print("✓ Files updated successfully")
+                return True
+                
+            finally:
+                # Clean up temp directory
+                if os.path.exists(temp_dir):
+                    shutil.rmtree(temp_dir)
+            
+        except requests.exceptions.RequestException as e:
+            print(f"Error downloading release: {e}")
+            return False
+        except Exception as e:
+            print(f"Error processing release: {e}")
+            return False
+
+    def files_are_identical(self, file1, file2):
+        """Compare two files to check if they are identical."""
+        try:
+            if os.path.getsize(file1) != os.path.getsize(file2):
+                return False
+                
+            with open(file1, 'rb') as f1, open(file2, 'rb') as f2:
+                # Compare files in chunks to handle large files
+                chunk_size = 8192
+                while True:
+                    chunk1 = f1.read(chunk_size)
+                    chunk2 = f2.read(chunk_size)
+                    if chunk1 != chunk2:
+                        return False
+                    if not chunk1:  # EOF
+                        break
+            return True
+        except Exception:
+            return False
 
     def ensure_env_file(self):
         """Ensure .env file exists with bot token."""
-        env_file = os.path.join(self.CONFIG_DIR, ".env")
-        if not os.path.exists(env_file):
-            print("\nNo .env file found. Creating one...")
-            token = input("Please enter your bot token: ").strip()
+        env_file = os.path.join("scripts", "config", ".env")
+        
+        try:
+            # Create config directory if it doesn't exist
+            os.makedirs(os.path.dirname(env_file), exist_ok=True)
             
-            with open(env_file, 'w') as f:
-                f.write(f"BOT_TOKEN={token}\n")
-            print("✓ Created .env file with bot token")
-        else:
-            print("✓ .env file exists")
-
-    def get_local_versions(self):
-        """Get version information of local files."""
-        if not os.path.exists(self.VERSION_FILE):
-            return {}
-        try:
-            with open(self.VERSION_FILE, 'r') as f:
-                return json.load(f)
-        except:
-            return {}
-
-    def get_remote_versions(self):
-        """Get latest versions from GitHub repository."""
-        try:
-            # Use requests from virtual environment
-            cmd_result = self._run_venv_command(
-                ["-c", "import requests; response = requests.get('" + self.RELEASE_URL + "'); print(response.text)"],
-                capture_output=True
-            )
-            if cmd_result and cmd_result.returncode == 0:
-                release_data = json.loads(cmd_result.stdout)
-                return {
-                    "version": release_data["tag_name"],
-                    "files": self._get_files_from_release(release_data)
-                }
+            # Check if .env exists and has a valid token
+            token = None
+            if os.path.exists(env_file):
+                with open(env_file, 'r') as f:
+                    content = f.read().strip()
+                    if content.startswith("BOT_TOKEN="):
+                        existing_token = content[9:].strip()
+                        if existing_token:  # Only use token if it's not empty
+                            token = existing_token
+            
+            # If no valid token found, ask for it
+            if not token:
+                print("\nBot token not set. Please enter your bot token:")
+                token = input("Token: ").strip()
+                
+                if not token:
+                    print("Error: Token cannot be empty")
+                    return False
+                
+                # Write the new token to file
+                with open(env_file, 'w', encoding='utf-8') as f:
+                    f.write(f"BOT_TOKEN={token}")
+                print("✓ Bot token saved successfully")
+            
+            return True
+            
         except Exception as e:
-            print(f"Error fetching remote versions: {e}")
-        return None
-
-    def _get_files_from_release(self, release_data):
-        """Extract file information from release data."""
-        try:
-            cmd_result = self._run_venv_command(
-                ["-c", "import requests; response = requests.get('" + self.REPO_URL + "'); print(response.text)"],
-                capture_output=True
-            )
-            if cmd_result and cmd_result.returncode == 0:
-                files = {}
-                for item in json.loads(cmd_result.stdout):
-                    if item["type"] == "file":
-                        files[item["path"]] = item["sha"]
-                return files
-        except Exception as e:
-            print(f"Error fetching file information: {e}")
-        return {}
-
-    def download_file(self, file_path, sha):
-        """Download a specific file from the repository."""
-        try:
-            url = urljoin(self.REPO_URL, file_path)
-            download_script = f"""
-import requests
-url = '{url}'
-response = requests.get(url)
-if response.status_code == 200:
-    file_data = response.json()
-    if file_data['sha'] == '{sha}':
-        content_response = requests.get(file_data['download_url'])
-        if content_response.status_code == 200:
-            with open('{file_path}', 'wb') as f:
-                f.write(content_response.content)
-            print('success')
-"""
-            os.makedirs(os.path.dirname(file_path), exist_ok=True)
-            result = self._run_venv_command(["-c", download_script], capture_output=True)
-            return result and "success" in result.stdout
-        except Exception as e:
-            print(f"Error downloading {file_path}: {e}")
-        return False
-
-    def update_files(self):
-        """Update local files if newer versions are available."""
-        local_versions = self.get_local_versions()
-        remote_versions = self.get_remote_versions()
-
-        if not remote_versions:
-            print("Could not fetch remote versions. Update aborted.")
+            print(f"Error handling .env file: {e}")
             return False
 
-        updates_needed = False
-        for file_path, remote_sha in remote_versions["files"].items():
-            local_sha = local_versions.get("files", {}).get(file_path)
-            if local_sha != remote_sha:
-                print(f"Updating {file_path}...")
-                if self.download_file(file_path, remote_sha):
-                    updates_needed = True
+    def start_bot(self):
+        """Start the bot within the starter process."""
+        main_script = os.path.join("scripts", "main.py")
+        if not os.path.exists(main_script):
+            print(f"Error: {main_script} not found!")
+            return False
+            
+        print("\nStarting bot...")
+        try:
+            # Change to scripts directory
+            original_dir = os.getcwd()
+            os.chdir("scripts")
+            
+            # Add scripts directory to Python path
+            sys.path.insert(0, os.getcwd())
+            
+            try:
+                # First try to run as module
+                import main
+                
+                # Try different ways the bot might be started
+                if hasattr(main, 'run'):
+                    main.run()
+                elif hasattr(main, 'bot') and hasattr(main.bot, 'run'):
+                    main.bot.run()
+                elif hasattr(main, 'client') and hasattr(main.client, 'run'):
+                    main.client.run()
                 else:
-                    print(f"Failed to update {file_path}")
-
-        if updates_needed:
-            with open(self.VERSION_FILE, 'w') as f:
-                json.dump(remote_versions, f)
-            print("Updates completed successfully.")
+                    # If no recognized patterns found, execute the file directly
+                    print("No standard run method found, executing main.py directly...")
+                    with open("main.py") as f:
+                        exec(f.read())
+                
+            except Exception as e:
+                print(f"Error running bot: {e}")
+                return False
+            finally:
+                # Restore original directory
+                os.chdir(original_dir)
+                
             return True
-        
-        print("No updates needed.")
-        return False
+        except Exception as e:
+            print(f"Error starting bot: {e}")
+            return False
 
     def run(self):
         """Main execution method."""
         print("=== Whiteout Survival Bot Starter ===")
         
-        # Verify repository access
-        if not self.verify_repository_access():
-            print("\nWould you like to reconfigure the GitHub repository?")
-            if input("(y/n): ").strip().lower() == 'y':
-                self.create_initial_config()
-                if not self.verify_repository_access():
-                    print("Still unable to access repository. Please check your settings and try again.")
-                    sys.exit(1)
-            else:
-                sys.exit(1)
-        
-        # Set up virtual environment
+        # Set up virtual environment first
         self.setup_virtual_environment()
         
-        # Install dependencies in virtual environment
+        # Install dependencies
         self.ensure_dependencies()
         
-        # Ensure .env file exists
-        self.ensure_env_file()
+        # Download and extract the latest release
+        if not self.download_latest_release():
+            print("Failed to download bot files. Please check your internet connection and try again.")
+            sys.exit(1)
         
-        print("\nChecking for updates...")
-        if self.update_files():
-            print("Updates installed. Restarting...")
-            self._run_venv_command(sys.argv)
-            sys.exit(0)
+        # Ensure bot token is configured
+        if not self.ensure_env_file():
+            print("Failed to configure bot token.")
+            sys.exit(1)
         
-        # Start the main bot
-        main_script = os.path.join(self.SCRIPTS_DIR, "main.py")
-        if os.path.exists(main_script):
-            print("\nStarting bot...")
-            self._run_venv_command([main_script])
-        else:
-            print(f"\nError: {main_script} not found!")
+        # Start the bot
+        if not self.start_bot():
+            sys.exit(1)
 
 if __name__ == "__main__":
     starter = BotStarter()

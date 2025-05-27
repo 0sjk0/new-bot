@@ -23,13 +23,18 @@ class WhiteoutBot(Client):
         # Initialize with all intents for maximum functionality
         intents = Intents.ALL
         
-        # Load environment variables
-        load_dotenv()
+        # Load environment variables from config/.env
+        env_path = os.path.join("config", ".env")
+        if not os.path.exists(env_path):
+            logger.error(f"No .env file found in {env_path}")
+            sys.exit(1)
+            
+        load_dotenv(env_path)
         
         # Get bot token from environment
         token = self._get_bot_token()
         if not token:
-            logger.error("No bot token found! Please add BOT_TOKEN to your .env file.")
+            logger.error("No bot token found! Please add BOT_TOKEN to your config/.env file.")
             sys.exit(1)
             
         super().__init__(
@@ -50,13 +55,13 @@ class WhiteoutBot(Client):
         """Get bot token from environment."""
         token = os.getenv('BOT_TOKEN')
         if not token:
-            logger.error("BOT_TOKEN not found in .env file")
+            logger.error("BOT_TOKEN not found in config/.env file")
             return None
         return token
         
     def _create_directories(self) -> None:
         """Create necessary directories if they don't exist."""
-        directories = ['logs', 'data', 'cogs']
+        directories = ['logs', 'data', 'cogs', 'config']
         for directory in directories:
             os.makedirs(directory, exist_ok=True)
             
@@ -113,11 +118,12 @@ class WhiteoutBot(Client):
         """Global error handler."""
         logger.error(f"An error occurred: {str(error)}", exc_info=error)
 
-def main():
-    """Main function to start the bot."""
+# Create global bot instance
+bot = WhiteoutBot()
+
+def run():
+    """Function to start the bot - called by starter.py"""
     try:
-        # Create and run bot instance
-        bot = WhiteoutBot()
         bot.start()
     except KeyboardInterrupt:
         logger.info("Bot shutdown initiated by user")
@@ -126,5 +132,6 @@ def main():
     finally:
         logger.info("Bot shutdown complete")
 
+# Only run directly if not imported
 if __name__ == "__main__":
-    main()
+    run()
