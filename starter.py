@@ -22,12 +22,13 @@ class BotStarter:
         self.TEMP_ZIP = "temp_download.zip"
         
         self.required_packages = [
-            "interactions.py",
+            "py-cord>=2.4.1",
             "python-dotenv",
             "colorama",
             "requests",
             "aiohttp",
-            "typing_extensions"
+            "typing_extensions",
+            "peewee"
         ]
 
         # Determine OS and set appropriate commands

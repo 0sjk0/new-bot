@@ -3,9 +3,9 @@ import sys
 import logging
 from typing import Optional, List
 from pathlib import Path
-import interactions # type: ignore
-from interactions import Client, Intents, listen # type: ignore
-from dotenv import load_dotenv # type: ignore
+import discord
+from discord.ext import commands
+from dotenv import load_dotenv
 
 # Configure logging
 logging.basicConfig(
@@ -18,10 +18,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-class WhiteoutBot(Client):
+class WhiteoutBot(commands.Bot):
     def __init__(self) -> None:
         # Initialize with all intents for maximum functionality
-        intents = Intents.ALL
+        intents = discord.Intents.all()
         
         # Load environment variables from config/.env
         env_path = os.path.join("config", ".env")
@@ -36,14 +36,15 @@ class WhiteoutBot(Client):
         if not token:
             logger.error("No bot token found! Please add BOT_TOKEN to your config/.env file.")
             sys.exit(1)
-            
+        
+        # Initialize the bot with required parameters
         super().__init__(
-            token=token,
+            command_prefix=commands.when_mentioned_or('!'),
             intents=intents,
-            logger=logger,
-            sync_interactions=True,
-            auto_defer=True
+            help_command=None
         )
+        
+        self.token = token
         
         # Store loaded cogs
         self.loaded_cogs: List[str] = []
@@ -102,21 +103,25 @@ class WhiteoutBot(Client):
                 except Exception as e2:
                     logger.error(f"Failed to re-load cog {cog} after reload failure: {str(e2)}")
                     self.loaded_cogs.remove(cog)
-                    
-    @listen()
-    async def on_ready(self) -> None:
-        """Event fired when the bot is ready."""
-        logger.info(f"Logged in as {self.user}")
-        
+    
+    async def setup_hook(self) -> None:
+        """A coroutine to be called to setup the bot, by default this is blank."""
         # Load all cogs
         await self.load_cogs()
         
+        # Sync app commands with Discord
+        await self.tree.sync()
+        
+        logger.info("Bot setup completed!")
+
+    async def on_ready(self) -> None:
+        """Event fired when the bot is ready."""
+        logger.info(f"Logged in as {self.user}")
         logger.info("Bot is ready!")
         
-    @listen()
-    async def on_error(self, error: Exception) -> None:
+    async def on_error(self, event_method: str, *args, **kwargs) -> None:
         """Global error handler."""
-        logger.error(f"An error occurred: {str(error)}", exc_info=error)
+        logger.error(f"An error occurred in {event_method}", exc_info=sys.exc_info())
 
 # Create global bot instance
 bot = WhiteoutBot()
@@ -124,7 +129,7 @@ bot = WhiteoutBot()
 def run():
     """Function to start the bot - called by starter.py"""
     try:
-        bot.start()
+        bot.run(bot.token)
     except KeyboardInterrupt:
         logger.info("Bot shutdown initiated by user")
     except Exception as e:
