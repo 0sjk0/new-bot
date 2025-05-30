@@ -28,7 +28,8 @@ class BotStarter:
             "requests",
             "aiohttp",
             "typing_extensions",
-            "peewee"
+            "peewee",
+            "PyNaCl"
         ]
 
         # Determine OS and set appropriate commands
